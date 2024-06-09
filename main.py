@@ -1,71 +1,86 @@
+import pyaudio
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import librosa
-import soundfile as sf
+from matplotlib.animation import FuncAnimation
 
-CHUNK_SIZE = 2048  
-SR = 44100 
-DURATION = 10  
+PLOT_ENABLED = True
 
-def read_audio_chunks(filename, chunk_size, duration):
-    with sf.SoundFile(filename) as audio_file:
-        sr = audio_file.samplerate
-        total_samples = int(duration * sr)
-        chunks = []
+# Audio parameters
+FORMAT = pyaudio.paInt16  
+CHANNELS = 1              
+RATE = 44100              
+CHUNK = 1024              
 
-        for _ in range(0, total_samples, chunk_size):
-            chunk = audio_file.read(chunk_size, dtype='float32')
-            if len(chunk) == 0:
-                break
-            chunks.append(chunk)
-        return chunks, sr
+p = pyaudio.PyAudio()
+stream = p.open(format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK)
 
-filename = 'c.wav'
-audio_chunks, sample_rate = read_audio_chunks(filename, CHUNK_SIZE, DURATION)
+NOTE_FREQUENCIES = {
+    'C0': 16.35, 'C#0': 17.32, 'D0': 18.35, 'D#0': 19.45, 'E0': 20.60, 'F0': 21.83, 'F#0': 23.12, 'G0': 24.50, 'G#0': 25.96, 'A0': 27.50, 'A#0': 29.14, 'B0': 30.87,
+    'C1': 32.70, 'C#1': 34.65, 'D1': 36.71, 'D#1': 38.89, 'E1': 41.20, 'F1': 43.65, 'F#1': 46.25, 'G1': 49.00, 'G#1': 51.91, 'A1': 55.00, 'A#1': 58.27, 'B1': 61.74,
+    'C2': 65.41, 'C#2': 69.30, 'D2': 73.42, 'D#2': 77.78, 'E2': 82.41, 'F2': 87.31, 'F#2': 92.50, 'G2': 98.00, 'G#2': 103.83, 'A2': 110.00, 'A#2': 116.54, 'B2': 123.47,
+    'C3': 130.81, 'C#3': 138.59, 'D3': 146.83, 'D#3': 155.56, 'E3': 164.81, 'F3': 174.61, 'F#3': 185.00, 'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
+    'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63, 'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00, 'A#4': 466.16, 'B4': 493.88,
+    'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25, 'F5': 698.46, 'F#5': 739.99, 'G5': 783.99, 'G#5': 830.61, 'A5': 880.00, 'A#5': 932.33, 'B5': 987.77,
+    'C6': 1046.50, 'C#6': 1108.73, 'D6': 1174.66, 'D#6': 1244.51, 'E6': 1318.51, 'F6': 1396.91, 'F#6': 1479.98, 'G6': 1567.98, 'G#6': 1661.22, 'A6': 1760.00, 'A#6': 1864.66, 'B6': 1975.53,
+    'C7': 2093.00, 'C#7': 2217.46, 'D7': 2349.32, 'D#7': 2489.02, 'E7': 2637.02, 'F7': 2793.83, 'F#7': 2959.96, 'G7': 3135.96, 'G#7': 3322.44, 'A7': 3520.00, 'A#7': 3729.31, 'B7': 3951.07,
+    'C8': 4186.01
+}
 
-fig, (ax_waveform, ax_spectrum) = plt.subplots(2, 1, figsize=(14, 8))
-fig.suptitle("Real-Time Audio Waveform and Frequency Spectrum")
+def find_closest_note(freq):
+    closest_note = min(NOTE_FREQUENCIES, key=lambda note: abs(NOTE_FREQUENCIES[note] - freq))
+    closest_freq = NOTE_FREQUENCIES[closest_note]
+    return closest_note, closest_freq
 
-waveform_line, = ax_waveform.plot([], [], lw=2)
-ax_waveform.set_xlim(0, CHUNK_SIZE / sample_rate)
-ax_waveform.set_ylim(-1, 1)
-ax_waveform.set_xlabel('Time (s)')
-ax_waveform.set_ylabel('Amplitude')
-ax_waveform.grid()
-
-spectrum_line, = ax_spectrum.plot([], [], lw=2)
-ax_spectrum.set_xlim(0, 5000)
-ax_spectrum.set_ylim(0, 50)
-ax_spectrum.set_xlabel('Frequency (Hz)')
-ax_spectrum.set_ylabel('Amplitude')
-ax_spectrum.grid()
-
-c_freq = 261.63
-ax_spectrum.axvline(c_freq, color='r', linestyle='--', label='C note frequency (261.63 Hz)')
-ax_spectrum.legend()
+def update_console():
+    data = stream.read(CHUNK)
+    audio_data = np.frombuffer(data, dtype=np.int16)
+    fft_data = np.fft.fft(audio_data)
+    freqs = np.fft.fftfreq(len(fft_data), 1 / RATE)
+    magnitude = np.abs(fft_data)[:CHUNK // 2]
+    freqs = freqs[:CHUNK // 2]
+    peak_index = np.argmax(magnitude)
+    peak_freq = freqs[peak_index]
+    closest_note, closest_freq = find_closest_note(peak_freq)
+    print(f"Peak frequency: {peak_freq:.2f} Hz, Closest note: {closest_note} ({closest_freq:.2f} Hz)")
 
 def update_plot(frame):
-    if frame >= len(audio_chunks):
-        return waveform_line, spectrum_line
+    data = stream.read(CHUNK)
+    audio_data = np.frombuffer(data, dtype=np.int16)
+    fft_data = np.fft.fft(audio_data)
+    freqs = np.fft.fftfreq(len(fft_data), 1 / RATE)
+    magnitude = np.abs(fft_data)[:CHUNK // 2]
+    freqs = freqs[:CHUNK // 2]
+    peak_index = np.argmax(magnitude)
+    peak_freq = freqs[peak_index]
+    closest_note, closest_freq = find_closest_note(peak_freq)
+    print(f"Peak frequency: {peak_freq:.2f} Hz, Closest note: {closest_note} ({closest_freq:.2f} Hz)")
+    line.set_data(freqs, magnitude)
+    return line,
 
-    chunk = audio_chunks[frame]
+if PLOT_ENABLED:
+    fig, ax = plt.subplots()
+    x = np.fft.fftfreq(CHUNK, 1 / RATE)
+    line, = ax.plot(x[:CHUNK // 2], np.zeros(CHUNK // 2))
+    ax.set_xlim(0, 5000)
+    ax.set_ylim(0, 1000)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Magnitude')
+    ax.set_title('Real-time Frequency Spectrum')
 
-    time_axis = np.linspace(0, len(chunk) / sample_rate, len(chunk))
-    waveform_line.set_data(time_axis, chunk)
+    ani = FuncAnimation(fig, update_plot, blit=True, interval=20)
 
-    yf = np.fft.fft(chunk)
-    xf = np.fft.fftfreq(len(chunk), 1 / sample_rate)
+    plt.show()
+else:
+    try:
+        while True:
+            update_console()
+    except KeyboardInterrupt:
+        pass
 
-    idx = np.arange(len(chunk) // 2)
-    xf = xf[idx]
-    yf = np.abs(yf[idx])
-
-    spectrum_line.set_data(xf, yf)
-    
-    return waveform_line, spectrum_line
-
-ani = animation.FuncAnimation(fig, update_plot, frames=len(audio_chunks), interval=1000 * CHUNK_SIZE / sample_rate, blit=True)
-
-plt.tight_layout()
-plt.show()
+stream.stop_stream()
+stream.close()
+p.terminate()
