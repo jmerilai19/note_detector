@@ -1,22 +1,16 @@
 import pyaudio
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 
 PLOT_ENABLED = True
 
-# Audio parameters
-FORMAT = pyaudio.paInt16  
-CHANNELS = 1              
+# audio parameters            
 RATE = 44100              
 CHUNK = 1024              
 
+# initialize audio stream
 p = pyaudio.PyAudio()
-stream = p.open(format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                frames_per_buffer=CHUNK)
+stream = p.open(format=pyaudio.paInt16, channels=1, rate=RATE, input=True, frames_per_buffer=CHUNK)
 
 NOTE_FREQUENCIES = {
     'C0': 16.35, 'C#0': 17.32, 'D0': 18.35, 'D#0': 19.45, 'E0': 20.60, 'F0': 21.83, 'F#0': 23.12, 'G0': 24.50, 'G#0': 25.96, 'A0': 27.50, 'A#0': 29.14, 'B0': 30.87,
@@ -30,12 +24,19 @@ NOTE_FREQUENCIES = {
     'C8': 4186.01
 }
 
+# buffer to store the last 10 frequencies
+frequency_buffer = []
+
 def find_closest_note(freq):
     closest_note = min(NOTE_FREQUENCIES, key=lambda note: abs(NOTE_FREQUENCIES[note] - freq))
     closest_freq = NOTE_FREQUENCIES[closest_note]
-    return closest_note, closest_freq
+    distance = abs(closest_freq - freq)
 
-def update_console():
+    return closest_note, closest_freq, distance
+
+def update():
+    font_color = '#C8C8C8'
+
     data = stream.read(CHUNK)
     audio_data = np.frombuffer(data, dtype=np.int16)
     fft_data = np.fft.fft(audio_data)
@@ -44,43 +45,76 @@ def update_console():
     freqs = freqs[:CHUNK // 2]
     peak_index = np.argmax(magnitude)
     peak_freq = freqs[peak_index]
-    closest_note, closest_freq = find_closest_note(peak_freq)
-    print(f"Peak frequency: {peak_freq:.2f} Hz, Closest note: {closest_note} ({closest_freq:.2f} Hz)")
 
-def update_plot(frame):
-    data = stream.read(CHUNK)
-    audio_data = np.frombuffer(data, dtype=np.int16)
-    fft_data = np.fft.fft(audio_data)
-    freqs = np.fft.fftfreq(len(fft_data), 1 / RATE)
-    magnitude = np.abs(fft_data)[:CHUNK // 2]
-    freqs = freqs[:CHUNK // 2]
-    peak_index = np.argmax(magnitude)
-    peak_freq = freqs[peak_index]
-    closest_note, closest_freq = find_closest_note(peak_freq)
-    print(f"Peak frequency: {peak_freq:.2f} Hz, Closest note: {closest_note} ({closest_freq:.2f} Hz)")
+    # update the frequency buffer
+    if len(frequency_buffer) >= 10:
+        frequency_buffer.pop(0)
+    frequency_buffer.append(peak_freq)
+
+    # calculate the average frequency
+    avg_freq = np.mean(frequency_buffer)
+
+    closest_note, _, distance = find_closest_note(avg_freq)
+
+    note_label = ""
+    if distance > 4:
+        note_label = closest_note[0]
+    else:
+        note_label = ""
+        
+    tx = plt.text(2500, 100000, note_label, fontsize=50, color=font_color, ha='center', va='center')
     line.set_data(freqs, magnitude)
-    return line,
 
-if PLOT_ENABLED:
+    plt.draw()
+    plt.pause(0.01)
+    tx.remove()
+
+def on_close(_):
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+    plt.close('all')
+    exit(0)
+
+if __name__ == '__main__':
+    line_color = "00DCFF"
+    font_color = '#C8C8C8'
+    plot_color = '#414141'
+    window_color = '#313131'
+
+    # remove toolbar from bottom
+    plt.rcParams['toolbar'] = 'None' 
+
+    # create plot
     fig, ax = plt.subplots()
     x = np.fft.fftfreq(CHUNK, 1 / RATE)
-    line, = ax.plot(x[:CHUNK // 2], np.zeros(CHUNK // 2))
+    line, = ax.plot(x[:CHUNK // 2], np.zeros(CHUNK // 2), color = font_color)
+
+    # set window title
+    fig = plt.gcf()
+    fig.canvas.manager.set_window_title('Note Detector')
+
+    # exit program when window is closed
+    fig.canvas.mpl_connect('close_event', on_close)
+
+    # window margins
+    plt.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15)
+
+    # plot colors
+    fig.set_facecolor(window_color)
+    ax.set_facecolor(plot_color)
+    ax.tick_params(color=font_color, labelcolor=font_color)
+    for spine in ax.spines.values():
+        spine.set_edgecolor(font_color)
+
+    # plot limits
     ax.set_xlim(0, 5000)
-    ax.set_ylim(0, 1000)
-    ax.set_xlabel('Frequency (Hz)')
-    ax.set_ylabel('Magnitude')
-    ax.set_title('Real-time Frequency Spectrum')
+    ax.set_ylim(0, 200000)
 
-    ani = FuncAnimation(fig, update_plot, blit=True, interval=20)
+    # axis labels
+    ax.set_xlabel('Frequency (Hz)', color=font_color)
+    ax.set_ylabel('Magnitude', color=font_color)
 
-    plt.show()
-else:
-    try:
-        while True:
-            update_console()
-    except KeyboardInterrupt:
-        pass
-
-stream.stop_stream()
-stream.close()
-p.terminate()
+    #main loop
+    while True:
+        update()

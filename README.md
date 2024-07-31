@@ -2,4 +2,6 @@
 
 Use PC microphone to detect piano notes utilizing the Fourier transform
 
-![](sc.png)
+![](sc_app.PNG)
+![](sc_demo
+.png)
